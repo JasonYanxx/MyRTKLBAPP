@@ -306,6 +306,105 @@ static int valsol(const double *azel, const int *vsat, int n,
     return 1;
 }
 
+/** pseudorange correction (Yan 20240114)------------------------------------------------
+ * args   : obsd_t *obs      I   observation data
+ *          int    n         I   number of observation data
+ *          nav_t  *nav      I   navigation data
+ *          prcopt_t *opt    I   processing options
+ *          sol_t  *sol      IO  solution
+ *          double *AziEle     IO  azimuth/elevation angle (rad) (NULL: no output)
+ *          ssat_t *ssat     IO  satellite status              (NULL: no output)
+ *          char   *msg      O   error message for error exit
+ *          rs [(0:2)+i*6]= obs[i] sat position {x,y,z} (m)
+ *          rs [(3:5)+i*6]= obs[i] sat velocity {vx,vy,vz} (m/s)
+ *          dts[(0:1)+i*2]= obs[i] sat clock {bias,drift} (s|s/s)
+ *          vare[i]        = obs[i] sat position and clock error variance (m^2)
+ *          svh[i]        = obs[i] sat health flag
+ *          double *Praw     O   raw pseduorange
+ *          double *Pcor     O   corrected pseduorange (sat clock bias, trop delay, iono delay)
+ */
+static int pseudocor(const obsd_t *obs, int n, const double *rs, const double *dts,
+                  const double *vare, const int *svh, const nav_t *nav,
+                  const prcopt_t *opt, sol_t *sol, double *AziEle, int *vsat,
+                  double *resp, char *msg, double *Praw, double *Pcor,double *Rtrue, double *measVar)
+{
+
+    
+    double x[NX]={0},dx[NX],Q[NX*NX],*v,*H,*var,sig;
+    int ii,info,stat;
+    
+    trace(3,"estpos  : n=%d\n",n);
+    
+    v=mat(n+4,1); H=mat(NX,n+4); var=mat(n+4,1);
+    
+    int iter = 0;
+    double r,dion,dtrp,vmeas,vion,vtrp,rr[3],pos[3],dtr,e[3],P,lam_L1;
+    int i,j,nv=0,sys,mask[4]={0};
+    
+    trace(3,"resprng : n=%d\n",n);
+    
+    
+    // rr is receiver position (xyz) 
+    rr[0]=-4607855.993;rr[1]=-272375.743;rr[2]=-4386954.429; // HTI
+    ecef2pos(rr,pos); //xyz to lla
+    
+    for (i=0;i<n&&i<MAXOBS;i++) {
+        vsat[i]=0; AziEle[i*2]=AziEle[1+i*2]=resp[i]=0.0;
+        
+        if (!(sys=satsys(obs[i].sat,NULL))) continue;
+        
+        /* reject duplicated observation data */
+        // if (i<n-1&&i<MAXOBS-1&&obs[i].sat==obs[i+1].sat) {
+        //     trace(2,"duplicated observation data %s sat=%2d\n",
+        //           time_str(obs[i].time,3),obs[i].sat);
+        //     i++;
+        //     continue;
+        // }
+
+        /* geometric distance/azimuth/elevation angle */
+        // if ((r=geodist(rs+i*6,rr,e))<=0.0||
+        //     satazel(pos,e,azel+i*2)<opt->elmin) continue;
+        r=geodist(rs+i*6,rr,e);
+        Rtrue[i]=r;
+        satazel(pos,e,AziEle+i*2);
+        
+        /* psudorange with code bias correction */
+        if ((P=prange(obs+i,nav,AziEle+i*2,iter,opt,&vmeas))==0.0) continue;
+        Praw[i]=P;
+        
+        /* ionospheric corrections */
+        if (!ionocorr(obs[i].time,nav,obs[i].sat,pos,AziEle+i*2,
+                      iter>0?opt->ionoopt:IONOOPT_BRDC,&dion,&vion)) continue;
+        
+        /* GPS-L1 -> L1/B1 */
+        if ((lam_L1=nav->lam[obs[i].sat-1][0])>0.0) {
+            dion*=SQR(lam_L1/lam_carr[0]);
+        }
+        /* tropospheric corrections */
+        if (!tropcorr(obs[i].time,nav,pos,AziEle+i*2,
+                      iter>0?opt->tropopt:TROPOPT_SAAS,&dtrp,&vtrp)) {
+            continue;
+        }
+        /* corrected pseudorange */
+        Pcor[i]=P+CLIGHT*dts[i*2]-dion-dtrp;
+
+        /* pseudorange residual */
+        // v[nv]=P-(r+dtr-CLIGHT*dts[i*2]+dion+dtrp);
+        
+        // vsat[i]=1; resp[i]=v[nv];
+        
+        // /* error variance */
+        measVar[i]=varerr(opt,AziEle[1+i*2],sys)+vare[i]+vmeas+vion+vtrp;
+        
+        // trace(4,"sat=%2d azel=%5.1f %4.1f res=%7.3f sig=%5.3f\n",obs[i].sat,
+        //       azel[i*2]*R2D,azel[1+i*2]*R2D,resp[i],sqrt(var[nv-1]));
+    }
+    // estimate receiver clock bias with GTxyz and error variance by WLS
+    
+
+    free(v); free(H); free(var);
+}
+
 /* estimate receiver position ------------------------------------------------*/
 static int estpos(const obsd_t *obs, int n, const double *rs, const double *dts,
                   const double *vare, const int *svh, const nav_t *nav,
@@ -521,6 +620,51 @@ static void estvel(const obsd_t *obs, int n, const double *rs, const double *dts
     }
     free(v); free(H);
 }
+
+
+static void output_pseudocor(const char* output_filename, const obsd_t *obs, int n, double* rs, 
+                            double* Praw, double* Pcor, double *Rtrue,
+                            double *AziEle,double *measVar) {
+    // Open the log file for writing
+    FILE* log_file = fopen(output_filename, "a"); // Open in "append" mode
+    
+    // Check if the log file was opened successfully
+    if (log_file == NULL) {
+        printf("Failed to open the log file.\n");
+        return;
+    }
+    // Check if the file is empty (first time opening)
+    fseek(log_file, 0, SEEK_END);
+    long file_size = ftell(log_file);
+    int is_empty = (file_size == 0);
+    
+    // Write the header if the file is empty
+    if (is_empty) {
+        fprintf(log_file, "gps_time,gps_sec,sat_id,sat_x,sat_y,sat_z,azi,ele,raw_pseudo,cor_pseudo,range,sigma\n");
+    }
+    // Iterate through the satellite observations and write the desired information to the log file
+    for (int i = 0; i < n; i++) {
+        double gps_time = obs[i].time.time;
+        double gps_sec = obs[i].time.sec;
+        int sat_id = obs[i].sat;
+        double sat_x = rs[0+i*6];
+        double sat_y = rs[1+i*6];
+        double sat_z = rs[2+i*6];
+        double azi = AziEle[0+i*2];
+        double ele = AziEle[1+i*2];
+        double raw_pseudo = Praw[i];
+        double cor_pseudo = Pcor[i];
+        double range = Rtrue[i];
+        double sigma = sqrt(measVar[i]);
+        
+        // Write the information to the log file
+        fprintf(log_file, "%lf,%f,%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n", gps_time,gps_sec, sat_id, sat_x,sat_y,sat_z,azi,ele,raw_pseudo, cor_pseudo,range,sigma);
+    }
+    
+    // Close the log file
+    fclose(log_file);
+}
+
 /* single-point positioning ----------------------------------------------------
 * compute receiver position, velocity, clock bias by single-point positioning
 * with pseudorange and doppler observables
@@ -542,7 +686,7 @@ extern int pntpos(const obsd_t *obs, int n, const nav_t *nav,
                   char *msg)
 {
     prcopt_t opt_=*opt;
-    double *rs,*dts,*var,*azel_,*resp;
+    double *rs,*dts,*var,*azel_,*resp,*Pcor,*Praw,*AziEle,*measVar,*Rtrue;
     int i,stat,vsat[MAXOBS]={0},svh[MAXOBS];
     
     sol->stat=SOLQ_NONE;
@@ -553,7 +697,8 @@ extern int pntpos(const obsd_t *obs, int n, const nav_t *nav,
     
     sol->time=obs[0].time; msg[0]='\0';
     
-    rs=mat(6,n); dts=mat(2,n); var=mat(1,n); azel_=zeros(2,n); resp=mat(1,n);
+    rs=mat(6,n); dts=mat(2,n); var=mat(1,n); azel_=zeros(2,n); resp=mat(1,n); 
+    Pcor=mat(1,n); Praw=mat(1,n); AziEle=mat(2,n); measVar=mat(1,n);Rtrue=mat(1,n);
     
     if (opt_.mode!=PMODE_SINGLE) { /* for precise positioning */
 #if 0
@@ -565,9 +710,19 @@ extern int pntpos(const obsd_t *obs, int n, const nav_t *nav,
     /* satellite positons, velocities and clocks */
     satposs(sol->time,obs,n,nav,opt_.sateph,rs,dts,var,svh);
     
+    /* pseduorange correction */
+    pseudocor(obs,n,rs,dts,var,svh,nav,&opt_,sol,AziEle,vsat,resp,msg,Praw,Pcor,Rtrue,measVar);
+    // output time (obs[i].time.time,obs[i].time.sec), sat_id(obs[i].sat), sat_pos(rs), 
+    // elevation(AziEle), azimuth(AziEle), raw_pseduo(Praw), corrected pseduo(Pcor), true range (Rtrue), sigma (measVar)
+    double doy = time2doy(obs[0].time);
+    int doy_i = (int)doy;
+    char output_filename[20];
+    sprintf(output_filename, "log%d.csv", doy_i);
+    output_pseudocor(output_filename,obs, n, rs, Praw, Pcor,Rtrue,AziEle,measVar);
+
     /* estimate receiver position with pseudorange */
     stat=estpos(obs,n,rs,dts,var,svh,nav,&opt_,sol,azel_,vsat,resp,msg);
-    
+
     /* raim fde */
     if (!stat&&n>=6&&opt->posopt[4]) {
         stat=raim_fde(obs,n,rs,dts,var,svh,nav,&opt_,sol,azel_,vsat,resp,msg);
@@ -597,3 +752,5 @@ extern int pntpos(const obsd_t *obs, int n, const nav_t *nav,
     free(rs); free(dts); free(var); free(azel_); free(resp);
     return stat;
 }
+
+

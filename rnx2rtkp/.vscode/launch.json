@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/rnx2rtkp.exe",
-            "args": ["-x","5","-p","0","-m","15","-n","-o","${workspaceFolder}\\results\\out.pos","${workspaceFolder}\\dataset\\chti0250.obs","${workspaceFolder}\\dataset\\BRDM00DLR_S_20230250000_01D_MN.rnx"],
+            "args": ["-x","5","-p","0","-m","15","-n","-o","${workspaceFolder}\\results\\out.pos","${workspaceFolder}\\dataset\\obs\\chti${config:epoch}0.23o","${workspaceFolder}\\dataset\\eph\\BRDM00DLR_S_2023${config:epoch}0000_01D_MN.rnx"],
             // "args": ["-x","5","-p","0","-m","15","-n","-o","results/out.pos","dataset/chti0250.obs","dataset/BRDM00DLR_S_20230250000_01D_MN.rnx"],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
