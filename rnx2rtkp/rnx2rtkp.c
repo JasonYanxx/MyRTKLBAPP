@@ -98,7 +98,7 @@ int main(int argc, char **argv)
     char *infile[MAXFILE],*outfile="";
     
     prcopt.mode  =PMODE_KINEMA;
-    prcopt.navsys=SYS_GPS|SYS_GLO;
+    prcopt.navsys=SYS_GPS|SYS_GLO|SYS_GAL;
     prcopt.refpos=1;
     prcopt.glomodear=1;
     solopt.timef=0;
@@ -142,6 +142,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i],"-e")) solopt.posf=SOLF_XYZ;
         else if (!strcmp(argv[i],"-a")) solopt.posf=SOLF_ENU;
         else if (!strcmp(argv[i],"-n")) solopt.posf=SOLF_NMEA;
+        else if (!strcmp(argv[i],"-j")) prcopt.sateph=1; // use IGS ephemeris (Yan 20240404) (not work)
         else if (!strcmp(argv[i],"-g")) solopt.degf=1;
         else if (!strcmp(argv[i],"-r")&&i+3<argc) {
             prcopt.refpos=0;

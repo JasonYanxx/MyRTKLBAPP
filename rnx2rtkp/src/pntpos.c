@@ -345,7 +345,8 @@ static int pseudocor(const obsd_t *obs, int n, const double *rs, const double *d
     
     
     // rr is receiver position (xyz) 
-    rr[0]=-4607855.993;rr[1]=-272375.743;rr[2]=-4386954.429; // HTI
+    // rr[0]=-4607855.993;rr[1]=-272375.743;rr[2]=-4386954.429; // CHTI location retreived from Rinex file
+    rr[0]=-4607855.52; rr[1]=-272377.50; rr[2]=-4386954.39; // CHTI GT location solved by online SPP
     ecef2pos(rr,pos); //xyz to lla
     
     for (i=0;i<n&&i<MAXOBS;i++) {

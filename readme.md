@@ -30,6 +30,10 @@ Below are parameters to be set in `pseudocor()`
 
 Once the parameter is re-set, one should re-build the code.
 
+### Build code
+- make sure `rnx2rtkp` is the root folder of vscode
+- Press `Ctrl+Shift+B` with file `rnx2rtkp.c` open
+
 ### Execute code
 
 - make sure `rnx2rtkp` is the root folder of vscode
