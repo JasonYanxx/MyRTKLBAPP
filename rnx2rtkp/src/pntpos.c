@@ -641,12 +641,12 @@ static void output_pseudocor(const char* output_filename, const obsd_t *obs, int
     
     // Write the header if the file is empty
     if (is_empty) {
-        fprintf(log_file, "gps_time,gps_sec,sat_id,sat_x,sat_y,sat_z,azi,ele,raw_pseudo,cor_pseudo,range,sigma\n");
+        fprintf(log_file, "unix_time,unix_sec,sat_id,sat_x,sat_y,sat_z,azi,ele,raw_pseudo,cor_pseudo,range,sigma\n");
     }
     // Iterate through the satellite observations and write the desired information to the log file
     for (int i = 0; i < n; i++) {
-        double gps_time = obs[i].time.time;
-        double gps_sec = obs[i].time.sec;
+        double unix_time = obs[i].time.time;
+        double unix_sec = obs[i].time.sec;
         int sat_id = obs[i].sat;
         double sat_x = rs[0+i*6];
         double sat_y = rs[1+i*6];
@@ -659,7 +659,7 @@ static void output_pseudocor(const char* output_filename, const obsd_t *obs, int
         double sigma = sqrt(measVar[i]);
         
         // Write the information to the log file
-        fprintf(log_file, "%lf,%f,%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n", gps_time,gps_sec, sat_id, sat_x,sat_y,sat_z,azi,ele,raw_pseudo, cor_pseudo,range,sigma);
+        fprintf(log_file, "%lf,%f,%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n", unix_time,unix_sec, sat_id, sat_x,sat_y,sat_z,azi,ele,raw_pseudo, cor_pseudo,range,sigma);
     }
     
     // Close the log file
