@@ -117,12 +117,6 @@ int main(int argc, char **argv)
     s_time.time = 1451606400; // 2016-01-01
     s_time.sec = 0;
 
-    // int year=2009;
-    // char* yy="09";
-    // char * station = "igs";
-    // s_time.time = 1230768000; // 2009-01-01
-    // s_time.sec = 0;
-
     int total_day=2;
     
     /*read all related files*/
@@ -170,52 +164,6 @@ int main(int argc, char **argv)
     /* set antenna paramters for precise product*/
     setpcv(s_time,&prcopt,&navs,&pcvss,&pcvsr,stas);
 
-    /* set antenna paramters for broadcast product according to NGA document*/
-    for (int i=0;i<32;i++) {
-        int satno = i+1;
-        double x,y,z;
-        switch (satno){
-            case 1: x=0.3910; y=0.0000; z=1.0910;break;
-            case 2: x=-0.0099; y=0.0061; z=-0.0820;break;
-            case 3: x=0.3950; y=0.0003; z=1.0907;break;
-            case 4: x=0.003785; y=-0.018085; z=1.2324;break;
-            case 5: x=0.0029; y=-0.0001; z=-0.0167;break;
-            case 6: x=0.3947; y=-0.0010; z=1.0917;break;
-            case 7: x=0.0013; y=0.0003; z=0.0006;break;
-            case 8: x=0.3962; y=-0.0003; z=1.0856;break;
-            case 9: x=0.3955; y=-0.0020; z=1.0922;break;
-            case 10: x=0.3962; y=-0.0013; z=1.0831;break;
-            case 11: x=0.0019; y=0.0011; z=1.5141;break;
-            case 12: x=-0.0102; y=0.0059; z=-0.0936;break;
-            case 13: x=0.0024; y=0.0025; z=1.6140;break;
-            case 14: x=0.0018; y=0.0002; z=1.6137;break;
-            case 15: x=-0.0100; y=0.0058; z=-0.0123;break;
-            case 16: x=-0.0098; y=0.0060; z=1.6630;break;
-            case 17: x=-0.0100; y=0.0060; z=-0.1008;break;
-            case 18: x=0.2794; y=0.0000; z=0.9519;break;
-            case 19: x=-0.0079; y=0.0046; z=-0.0180;break;
-            case 20: x=0.0022; y=0.0014; z=1.6140;break;
-            case 21: x=0.0023; y=-0.0006; z=1.5840;break;
-            case 22: x=0.0018; y=-0.0009; z=0.0598;break;
-            case 23: x=-0.0088; y=0.0035; z=0.0004;break;
-            case 24: x=0.3920; y=0.0020; z=1.0930;break;
-            case 25: x=0.3920; y=0.0020; z=1.0930;break;
-            case 26: x=0.3949; y=-0.0011; z=1.0927;break;
-            case 27: x=0.3914; y=0.0003; z=1.0904;break;
-            case 28: x=0.0018; y=0.0007; z=1.5131;break;
-            case 29: x=-0.0101; y=0.0059; z=-0.0151;break;
-            case 30: x=0.3952; y=-0.00080; z=1.0904;break;
-            case 31: x=0.0016; y=0.0003; z=-0.0575;break;
-            case 32: x=0.3966; y=-0.00020; z=1.0843;break;
-        }
-        pcv_t pcv; 
-        pcv=nav->pcvs[i];
-        pcv_t *ppcv = &pcv;
-        ppcv->off[0][0]=x;ppcv->off[0][1]=y;ppcv->off[0][2]=z;
-        ppcv->off[1][0]=x;ppcv->off[1][1]=y;ppcv->off[1][2]=z;
-        nav->pcvsb[i]=*ppcv;
-    }
-
     /* inquire */
     FILE* log_file = fopen("./outpos_all.csv", "w"); // Open in "append" mode
     // fprintf(log_file, "Year,Doy,SoD,PRN,Xp,Yp,Zp,dtp,Xb,Yb,Zb,dtb,clkDiff\n");
@@ -227,21 +175,6 @@ int main(int argc, char **argv)
         int year=(int)ep[0];
         double step = 1; //seconds
         for(int i_epoch=0;i_epoch<86400/step;i_epoch++){
-            int flag=0;
-            if(doy==1 && step*i_epoch==82800){
-                flag=1;
-            }
-            if(doy==3 && step*i_epoch==85800){
-                flag=1;
-            }
-            if(doy==6 && step*i_epoch==65100){
-                flag=1;
-            }
-            if(doy==5 && step*i_epoch==900){
-                flag=1;
-            }
-
-
             gtime_t inq_time=timeadd(inq_time_s,step*i_epoch);// inquire time
             char s_inq[32];
             time2str(inq_time, s_inq,1);
@@ -261,20 +194,7 @@ int main(int argc, char **argv)
                 /* precise position transformation: ECEF->RAC */
                 double pos_pce_rac[3];
                 ecef2rac(rs_pce,rs_pce,pos_pce_rac);
-                
-                if(!opt){
-                /* precise clock transformation: APC->CoM */
-                    const double *lam_tmp=nav->lam[sat-1];
-                    const pcv_t *pcv_tmp =nav->pcvs+sat-1;
-                    int f1=0,f2=1;
-                    double gamma,C1,C2;
-                    gamma=SQR(lam_tmp[f2])/SQR(lam_tmp[f1]);
-                    C1=gamma/(gamma-1.0);
-                    C2=-1.0 /(gamma-1.0);
-                    double apc_LC_z = C1*pcv_tmp->off[f1][2]+C2*pcv_tmp->off[f2][2]; // z-direction APC offset in the ionosphere-free combination in satellite body frame
-                    dts_pce[0] = dts_pce[0] + apc_LC_z/CLIGHT; // APC -> MoC 
-                }   
-                
+             
                 /* broadcast satellite position and clock */
                 double *rs_bce,*dts_bce,*var_bce;
                 int svh_bce[n_inq];
@@ -283,31 +203,10 @@ int main(int argc, char **argv)
                     continue;
                 }
 
-                if(!opt){
-                /* broadcast position transformation: APC->CoM */
-                    double dant_bce[3]={0}; // APC offeset in ECEF
-                    satantoff_bce(inq_time,rs_bce,sat,nav,dant_bce); 
-                    for (int ii=0;ii<3;ii++) {
-                        rs_bce[ii]=rs_bce[ii] - dant_bce[ii]; // negative sign: APC->CoM
-                    }
-                }
                 /* broadcast position transformation: ECEF->RAC */
                 double pos_bce_rac[3];
                 ecef2rac(rs_pce,rs_bce,pos_bce_rac);
                 
-                if(!opt){
-                /* broadcast clock transformation: APC->CoM */
-                    const double *lam_tmp=nav->lam[sat-1];
-                    int f1=0,f2=1;
-                    double gamma,C1,C2;
-                    gamma=SQR(lam_tmp[f2])/SQR(lam_tmp[f1]);
-                    C1=gamma/(gamma-1.0);
-                    C2=-1.0 /(gamma-1.0);
-                    const pcv_t *pcv_tmp_bce =nav->pcvsb+sat-1;
-                    double apc_LC_z_bce = C1*pcv_tmp_bce->off[f1][2]+C2*pcv_tmp_bce->off[f2][2]; // z-direction APC offset in the ionosphere-free combination in satellite body frame
-                    dts_bce[0] = dts_bce[0] + apc_LC_z_bce/CLIGHT; // APC -> MoC 
-                }
-
                 fprintf(log_file, "%d,%d,%d,%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n",
                 year,doy,sod,sat, 
                 // rs_pce[0],rs_pce[1],rs_pce[2],rs_bce[0],rs_bce[1],rs_bce[2], // ECEF
@@ -318,8 +217,6 @@ int main(int argc, char **argv)
                 pos_pce_rac[2]-pos_bce_rac[2], // ctDiff
                 CLIGHT*(dts_pce[0]-dts_bce[0])); // clkDiff
                 
-                int aa;
-                aa=0;
             }
         }
     }

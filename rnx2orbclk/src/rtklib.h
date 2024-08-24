@@ -45,7 +45,6 @@ extern "C" {
 #endif
 
 /* constants -----------------------------------------------------------------*/
-
 #define VER_RTKLIB  "2.4.2"             /* library version */
 
 #define PATCH_LEVEL "p13"               /* patch level */
@@ -825,6 +824,7 @@ typedef struct {        /* navigation data type */
     double glo_cpbias[4];    /* glonass code-phase bias {1C,1P,2C,2P} (m) */
     char glo_fcn[MAXPRNGLO+1]; /* glonass frequency channel number + 8 */
     pcv_t pcvs[MAXSAT]; /* satellite antenna pcv */
+    pcv_t pcvsb[MAXSAT]; /* satellite antenna pcv for broadcast product */
     sbssat_t sbssat;    /* SBAS satellite corrections */
     sbsion_t sbsion[MAXBAND+1]; /* SBAS ionosphere corrections */
     dgps_t dgps[MAXSAT]; /* DGPS corrections */
@@ -1303,9 +1303,11 @@ extern void matfprint(const double *A, int n, int m, int p, int q, FILE *fp);
 
 /* time and string functions -------------------------------------------------*/
 extern double  str2num(const char *s, int i, int n);
+extern double  str2num_sugl(const char *s, int i, int n);
 extern int     str2time(const char *s, int i, int n, gtime_t *t);
 extern void    time2str(gtime_t t, char *str, int n);
 extern gtime_t epoch2time(const double *ep);
+extern double time2sec(gtime_t time, gtime_t *day);
 extern void    time2epoch(gtime_t t, double *ep);
 extern gtime_t gpst2time(int week, double sec);
 extern double  time2gpst(gtime_t t, int *week);
@@ -1464,6 +1466,14 @@ extern int  init_rnxctr (rnxctr_t *rnx);
 extern void free_rnxctr (rnxctr_t *rnx);
 extern int  open_rnxctr (rnxctr_t *rnx, FILE *fp);
 extern int  input_rnxctr(rnxctr_t *rnx, FILE *fp);
+extern int readrnxh(FILE *fp, double *ver, char *type, int *sys, int *tsys,
+                    char tobs[][MAXOBSTYPE][4], nav_t *nav, sta_t *sta);
+extern int readrnxnav(FILE *fp, const char *opt, double ver, int sys,
+                      nav_t *nav);
+extern int readsp3h(FILE *fp, gtime_t *time, char *type, int *sats,
+                    double *bfact, char *tsys);
+extern void readsp3b(FILE *fp, char type, int *sats, int ns, double *bfact,
+                     char *tsys, int index, int opt, nav_t *nav);
 
 /* ephemeris and clock functions ---------------------------------------------*/
 extern double eph2clk (gtime_t time, const eph_t  *eph);
@@ -1494,6 +1504,13 @@ extern int tle_name_read(const char *file, tle_t *tle);
 extern int tle_pos(gtime_t time, const char *name, const char *satno,
                    const char *desig, const tle_t *tle, const erp_t *erp,
                    double *rs);
+extern void setpcv(gtime_t time, prcopt_t *popt, nav_t *nav, const pcvs_t *pcvs,
+                   const pcvs_t *pcvr, const sta_t *sta);
+extern int ephpos(gtime_t time, gtime_t teph, int sat, const nav_t *nav,
+                  int iode, double *rs, double *dts, double *var, int *svh);
+extern void satantoff_bce(gtime_t time, const double *rs, int sat, const nav_t *nav,
+                      double *dant);
+extern void ecef2rac(const double *rs_ref,const double *rs, double *pos_rac);
 
 /* receiver raw data functions -----------------------------------------------*/
 extern unsigned int getbitu(const unsigned char *buff, int pos, int len);

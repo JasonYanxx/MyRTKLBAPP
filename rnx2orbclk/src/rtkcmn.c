@@ -1172,6 +1172,24 @@ extern double str2num(const char *s, int i, int n)
     for (s+=i;*s&&--n>=0;s++) *p++=*s=='d'||*s=='D'?'E':*s; *p='\0';
     return sscanf(str,"%lf",&value)==1?value:0.0;
 }
+
+/* string to number (for sugl nav file only) ------------------------------------------------------------
+* convert substring in string to number
+* args   : char   *s        I   string ("... nnn.nnn ...")
+*          int    i,n       I   substring position and width
+* return : converted number (0.0:error)
+*-----------------------------------------------------------------------------*/
+extern double str2num_sugl(const char *s, int i, int n)
+{
+    double value;
+    char str[256],*p=str;
+    
+    if (i<0||(int)strlen(s)<i||(int)sizeof(str)-1<n) return 0.0;
+    for (s+=i;*s&&--n>=0;s++) *p++=*s; *p='\0';
+    return sscanf(str,"%lf",&value)==1?value:0.0;
+}
+
+
 /* string to time --------------------------------------------------------------
 * convert substring in string to gtime_t struct
 * args   : char   *s        I   string ("... yyyy mm dd hh mm ss ...")
@@ -1471,7 +1489,7 @@ extern gtime_t bdt2gpst(gtime_t t)
     return timeadd(t,14.0);
 }
 /* time to day and sec -------------------------------------------------------*/
-static double time2sec(gtime_t time, gtime_t *day)
+extern double time2sec(gtime_t time, gtime_t *day)
 {
     double ep[6],sec;
     time2epoch(time,ep);
@@ -2389,6 +2407,43 @@ static int cmpeph(const void *p1, const void *p2)
            (q1->toe.time!=q2->toe.time?(int)(q1->toe.time-q2->toe.time):
             q1->sat-q2->sat);
 }
+/* compare precise ephemeris ---------------------------------------------------------*/
+static int cmppeph(const void *p1, const void *p2)
+{
+    peph_t *q1=(peph_t *)p1,*q2=(peph_t *)p2;
+    return (int)(q1->time.time-q2->time.time);
+}
+
+/* sort and unique precise ephemeris -------------------------------------------------*/
+static void uniqpeph(nav_t *nav)
+{
+    peph_t *nav_peph;
+    int i,j;
+    
+    trace(3,"uniqpeph: ne=%d\n",nav->ne);
+    
+    if (nav->ne<=0) return;
+    
+    qsort(nav->peph,nav->ne,sizeof(peph_t),cmppeph);
+    
+    for (i=1,j=0;i<nav->ne;i++) {
+        if (nav->peph[i].time.time!=nav->peph[j].time.time) {
+            nav->peph[++j]=nav->peph[i];
+        }
+    }
+    nav->ne=j+1;
+    
+    if (!(nav_peph=(peph_t *)realloc(nav->peph,sizeof(peph_t)*nav->ne))) {
+        trace(1,"uniqeph malloc error ne=%d\n",nav->ne);
+        free(nav->peph); nav->peph=NULL; nav->ne=nav->nemax=0;
+        return;
+    }
+    nav->peph=nav_peph;
+    nav->nemax=nav->ne;
+    
+    trace(4,"uniqpeph: ne=%d\n",nav->ne);
+}
+
 /* sort and unique ephemeris -------------------------------------------------*/
 static void uniqeph(nav_t *nav)
 {
@@ -2511,6 +2566,7 @@ extern void uniqnav(nav_t *nav)
     uniqeph (nav);
     uniqgeph(nav);
     uniqseph(nav);
+    uniqpeph(nav);
     
     /* update carrier wave length */
     for (i=0;i<MAXSAT;i++) for (j=0;j<NFREQ;j++) {

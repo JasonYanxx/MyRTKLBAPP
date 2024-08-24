@@ -557,7 +557,7 @@ static void decode_hnavh(char *buff, nav_t *nav)
     }
 }
 /* read rinex header ---------------------------------------------------------*/
-static int readrnxh(FILE *fp, double *ver, char *type, int *sys, int *tsys,
+extern int readrnxh(FILE *fp, double *ver, char *type, int *sys, int *tsys,
                     char tobs[][MAXOBSTYPE][4], nav_t *nav, sta_t *sta)
 {
     double bias;
@@ -1231,12 +1231,18 @@ static int readrnxnavb(FILE *fp, const char *opt, double ver, int sys,
             for (j=0,p=buff+sp+19;j<3;j++,p+=19) {
                 data[i++]=str2num(p,0,19);
             }
+            // for (j=0,p=buff+sp+20;j<3;j++,p+=20) {
+            //     data[i++]=str2num_sugl(p,0,20);
+            // }
         }
         else {
             /* decode data fields */
             for (j=0,p=buff+sp;j<4;j++,p+=19) {
                 data[i++]=str2num(p,0,19);
             }
+            // for (j=0,p=buff+sp+1;j<4;j++,p+=20) {
+            //     data[i++]=str2num_sugl(p,0,20);
+            // }
             /* decode ephemeris */
             if (sys==SYS_GLO&&i>=15) {
                 if (!(mask&sys)) return 0;
@@ -1307,7 +1313,7 @@ static int add_seph(nav_t *nav, const seph_t *seph)
     return 1;
 }
 /* read rinex nav/gnav/geo nav -----------------------------------------------*/
-static int readrnxnav(FILE *fp, const char *opt, double ver, int sys,
+extern int readrnxnav(FILE *fp, const char *opt, double ver, int sys,
                       nav_t *nav)
 {
     eph_t eph;

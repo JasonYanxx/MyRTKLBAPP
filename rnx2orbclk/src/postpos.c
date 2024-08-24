@@ -814,7 +814,7 @@ static void closeses(nav_t *nav, pcvs_t *pcvs, pcvs_t *pcvr)
     traceclose();
 }
 /* set antenna parameters ----------------------------------------------------*/
-static void setpcv(gtime_t time, prcopt_t *popt, nav_t *nav, const pcvs_t *pcvs,
+extern void setpcv(gtime_t time, prcopt_t *popt, nav_t *nav, const pcvs_t *pcvs,
                    const pcvs_t *pcvr, const sta_t *sta)
 {
     pcv_t *pcv;

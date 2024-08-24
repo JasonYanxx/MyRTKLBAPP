@@ -62,7 +62,7 @@ static int code2sys(char code)
     return SYS_NONE;
 }
 /* read sp3 header -----------------------------------------------------------*/
-static int readsp3h(FILE *fp, gtime_t *time, char *type, int *sats,
+extern int readsp3h(FILE *fp, gtime_t *time, char *type, int *sats,
                     double *bfact, char *tsys)
 {
     int i,j,k=0,ns=0,sys,prn;
@@ -115,7 +115,7 @@ static int addpeph(nav_t *nav, peph_t *peph)
     return 1;
 }
 /* read sp3 body -------------------------------------------------------------*/
-static void readsp3b(FILE *fp, char type, int *sats, int ns, double *bfact,
+extern void readsp3b(FILE *fp, char type, int *sats, int ns, double *bfact,
                      char *tsys, int index, int opt, nav_t *nav)
 {
     peph_t peph;
@@ -180,6 +180,9 @@ static void readsp3b(FILE *fp, char type, int *sats, int ns, double *bfact,
                     if (val!=0.0&&fabs(val-999999.999999)>=1E-6) {
                         peph.pos[sat-1][j]=val*(j<3?1000.0:1E-6);
                         v=1; /* valid epoch */
+                    }
+                    else{
+                        v=0; // fix bug: prevent read the last group of sp3 file where clk is always 999999.999999
                     }
                     if ((base=bfact[j<3?0:1])>0.0&&std>0.0) {
                         peph.std[sat-1][j]=(float)(pow(base,std)*(j<3?1E-3:1E-12));
@@ -576,6 +579,86 @@ extern void satantoff(gtime_t time, const double *rs, int sat, const nav_t *nav,
         dant[i]=C1*dant1+C2*dant2;
     }
 }
+
+/* Transform satellite position from ECEF to RAC frame ---------------------
+* args   : double *rs_ref         I   reference satellite position and velocity (ecef)
+*                                 {x,y,z,vx,vy,vz} (m|m/s)
+*          double *rs             I   inquired satellite position and velocity (ecef)
+*                                 {x,y,z,vx,vy,vz} (m|m/s)
+*          double *pos_rac         O   satellite position (RAC)
+*                                 {x,y,z} (m)
+* return : none
+*-----------------------------------------------------------------------------*/
+extern void ecef2rac(const double *rs_ref,const double *rs, double *pos_rac)
+{
+    /* unit vectors of RAC */
+    double er[3],ea[3],ec[3],r[3],rv[3],tmp[3];
+    int i;
+    for (i=0;i<3;i++) rv[i]=rs_ref[i+3]; // velocity 
+    for (i=0;i<3;i++) r[i]=-rs_ref[i];
+    if (!normv3(r,er)) return;
+    for (i=0;i<3;i++) r[i]=rs_ref[i];
+    cross3(r,rv,tmp);
+    if (!normv3(tmp,ec)) return;
+    cross3(ec,er,ea);
+
+    /*convert */
+    for (i=0;i<3;i++) r[i]=rs[i];
+    pos_rac [0] = dot(er,r,2);
+    pos_rac [1] = dot(ea,r,2);
+    pos_rac [2] = dot(ec,r,2);
+}
+
+/* satellite antenna phase center offset for broadcast product------------------
+* compute satellite antenna phase center offset in ecef
+* args   : gtime_t time       I   time (gpst)
+*          double *rs         I   satellite position and velocity (ecef)
+*                                 {x,y,z,vx,vy,vz} (m|m/s)
+*          int    sat         I   satellite number
+*          nav_t  *nav        I   navigation data
+*          double *dant       I   satellite antenna phase center offset (ecef)
+*                                 {dx,dy,dz} (m) (iono-free LC value)
+* return : none
+*-----------------------------------------------------------------------------*/
+extern void satantoff_bce(gtime_t time, const double *rs, int sat, const nav_t *nav,
+                      double *dant)
+{
+    const double *lam=nav->lam[sat-1];
+    const pcv_t *pcv=nav->pcvsb+sat-1;
+    double ex[3],ey[3],ez[3],es[3],r[3],rsun[3],gmst,erpv[5]={0};
+    double gamma,C1,C2,dant1,dant2;
+    int i,j=0,k=1;
+    
+    trace(4,"satantoff: time=%s sat=%2d\n",time_str(time,3),sat);
+    
+    /* sun position in ecef */
+    sunmoonpos(gpst2utc(time),erpv,rsun,NULL,&gmst);
+    
+    /* unit vectors of satellite fixed coordinates */
+    for (i=0;i<3;i++) r[i]=-rs[i];
+    if (!normv3(r,ez)) return;
+    for (i=0;i<3;i++) r[i]=rsun[i]-rs[i];
+    if (!normv3(r,es)) return;
+    cross3(ez,es,r);
+    if (!normv3(r,ey)) return;
+    cross3(ey,ez,ex);
+    
+    if (NFREQ>=3&&(satsys(sat,NULL)&(SYS_GAL|SYS_SBS))) k=2;
+    
+    if (NFREQ<2||lam[j]==0.0||lam[k]==0.0) return;
+    
+    gamma=SQR(lam[k])/SQR(lam[j]);
+    C1=gamma/(gamma-1.0);
+    C2=-1.0 /(gamma-1.0);
+    
+    /* iono-free LC */
+    for (i=0;i<3;i++) {
+        dant1=pcv->off[j][0]*ex[i]+pcv->off[j][1]*ey[i]+pcv->off[j][2]*ez[i];
+        dant2=pcv->off[k][0]*ex[i]+pcv->off[k][1]*ey[i]+pcv->off[k][2]*ez[i];
+        dant[i]=C1*dant1+C2*dant2;
+    }
+}
+
 /* satellite position/clock by precise ephemeris/clock -------------------------
 * compute satellite position/clock with precise ephemeris/clock
 * args   : gtime_t time       I   time (gpst)

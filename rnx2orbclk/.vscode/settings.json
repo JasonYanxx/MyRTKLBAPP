@@ -11,6 +11,12 @@
         "limits": "c",
         "*.tcc": "c",
         "typeinfo": "c",
+        "pthread.h": "c",
+        "array": "c",
+        "istream": "c",
+        "ostream": "c",
+        "tuple": "c",
+        "utility": "c"
     },
     "epoch":"028"
     
