@@ -181,9 +181,6 @@ extern void readsp3b(FILE *fp, char type, int *sats, int ns, double *bfact,
                         peph.pos[sat-1][j]=val*(j<3?1000.0:1E-6);
                         v=1; /* valid epoch */
                     }
-                    else{
-                        v=0; // fix bug: prevent read the last group of sp3 file where clk is always 999999.999999
-                    }
                     if ((base=bfact[j<3?0:1])>0.0&&std>0.0) {
                         peph.std[sat-1][j]=(float)(pow(base,std)*(j<3?1E-3:1E-12));
                     }

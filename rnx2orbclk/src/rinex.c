@@ -1263,6 +1263,87 @@ static int readrnxnavb(FILE *fp, const char *opt, double ver, int sys,
     }
     return -1;
 }
+
+static int readrnxnavb_stanford(FILE *fp, const char *opt, double ver, int sys,
+                       int *type, eph_t *eph, geph_t *geph, seph_t *seph)
+{
+    gtime_t toc;
+    double data[64];
+    int i=0,j,prn,sat=0,sp=3,mask;
+    char buff[MAXRNXLEN],id[8]="",*p;
+    
+    trace(4,"readrnxnavb: ver=%.2f sys=%d\n",ver,sys);
+    
+    /* set system mask */
+    mask=set_sysmask(opt);
+    
+    while (fgets(buff,MAXRNXLEN,fp)) {
+        
+        if (i==0) {
+            
+            /* decode satellite field */
+            if (ver>=3.0||sys==SYS_GAL||sys==SYS_QZS) { /* ver.3 or GAL/QZS */
+                strncpy(id,buff,3);
+                sat=satid2no(id);
+                sp=4;
+                if (ver>=3.0) sys=satsys(sat,NULL);
+            }
+            else {
+                prn=(int)str2num(buff,0,2);
+                
+                if (sys==SYS_SBS) {
+                    sat=satno(SYS_SBS,prn+100);
+                }
+                else if (sys==SYS_GLO) {
+                    sat=satno(SYS_GLO,prn);
+                }
+                else if (93<=prn&&prn<=97) { /* extension */
+                    sat=satno(SYS_QZS,prn+100);
+                }
+                else sat=satno(SYS_GPS,prn);
+            }
+            /* decode toc field */
+            if (str2time(buff+sp,0,19,&toc)) {
+                trace(2,"rinex nav toc error: %23.23s\n",buff);
+                return 0;
+            }
+            /* decode data fields */
+            // for (j=0,p=buff+sp+19;j<3;j++,p+=19) {
+            //     data[i++]=str2num(p,0,19);
+            // }
+            for (j=0,p=buff+sp+20;j<3;j++,p+=20) {
+                data[i++]=str2num_sugl(p,0,20);
+            }
+        }
+        else {
+            /* decode data fields */
+            // for (j=0,p=buff+sp;j<4;j++,p+=19) {
+            //     data[i++]=str2num(p,0,19);
+            // }
+            for (j=0,p=buff+sp+1;j<4;j++,p+=20) {
+                data[i++]=str2num_sugl(p,0,20);
+            }
+            /* decode ephemeris */
+            if (sys==SYS_GLO&&i>=15) {
+                if (!(mask&sys)) return 0;
+                *type=1;
+                return decode_geph(ver,sat,toc,data,geph);
+            }
+            else if (sys==SYS_SBS&&i>=15) {
+                if (!(mask&sys)) return 0;
+                *type=2;
+                return decode_seph(ver,sat,toc,data,seph);
+            }
+            else if (i>=31) {
+                if (!(mask&sys)) return 0;
+                *type=0;
+                return decode_eph(ver,sat,toc,data,eph);
+            }
+        }
+    }
+    return -1;
+}
+
 /* add ephemeris to navigation data ------------------------------------------*/
 static int add_eph(nav_t *nav, const eph_t *eph)
 {
@@ -1340,8 +1421,37 @@ extern int readrnxnav(FILE *fp, const char *opt, double ver, int sys,
     }
     return nav->n>0||nav->ng>0||nav->ns>0;
 }
+
+extern int readrnxnav_stanford(FILE *fp, const char *opt, double ver, int sys,
+                      nav_t *nav)
+{
+    eph_t eph;
+    geph_t geph;
+    seph_t seph;
+    int stat,type;
+    
+    trace(3,"readrnxnav: ver=%.2f sys=%d\n",ver,sys);
+    
+    if (!nav) return 0;
+    
+    /* read rinex navigation data body */
+    while ((stat=readrnxnavb_stanford(fp,opt,ver,sys,&type,&eph,&geph,&seph))>=0) {
+        
+        /* add ephemeris to navigation data */
+        if (stat) {
+            switch (type) {
+                case 1 : stat=add_geph(nav,&geph); break;
+                case 2 : stat=add_seph(nav,&seph); break;
+                default: stat=add_eph (nav,&eph ); break;
+            }
+            if (!stat) return 0;
+        }
+    }
+    return nav->n>0||nav->ng>0||nav->ns>0;
+}
+
 /* read rinex clock ----------------------------------------------------------*/
-static int readrnxclk(FILE *fp, const char *opt, int index, nav_t *nav)
+extern int readrnxclk(FILE *fp, const char *opt, int index, nav_t *nav)
 {
     pclk_t *nav_pclk;
     gtime_t time;
@@ -1543,7 +1653,7 @@ static int cmppclk(const void *p1, const void *p2)
     return tt<-1E-9?-1:(tt>1E-9?1:q1->index-q2->index);
 }
 /* combine precise clock -----------------------------------------------------*/
-static void combpclk(nav_t *nav)
+extern void combpclk(nav_t *nav)
 {
     pclk_t *nav_pclk;
     int i,j,k;

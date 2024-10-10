@@ -13,3 +13,6 @@
 *.exe
 *.sh
 *.atx
+*.clk
+*.*n
+*.eph

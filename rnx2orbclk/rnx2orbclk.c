@@ -109,36 +109,55 @@ int main(int argc, char **argv)
     nav->eph =NULL; nav->n =nav->nmax =0;
     prcopt_t *popt = &prcopt;
 
-    
-    gtime_t s_time;  // time of start
-    int year=2016;
-    char* yy="16";
-    char * station = "com";
-    s_time.time = 1451606400; // 2016-01-01
-    s_time.sec = 0;
+    FILE* log_file = fopen("log.txt", "w"); // record
 
-    // int year=2009;
-    // char* yy="09";
-    // char * station = "igs";
-    // s_time.time = 1230768000; // 2009-01-01
-    // s_time.sec = 0;
+    char * station_sp3 = "cod";
+    char * station_clk = "cod";
+    // char * brd_agent = "sugl"; // "sugl" for Stanford clean broadcast ephemeris;  "brdc" for IGS ephemeris
+    char * brd_agent = "brdc"; // "sugl" for Stanford clean broadcast ephemeris;  "brdc" for IGS ephemeris
+    // time of start "yyyy mm dd hh mm ss"
+    // char *s_time_str = "2016 01 01 00 00 00"; 
+    // char *s_time_str = "2017 01 01 00 00 00"; 
+    // char *s_time_str = "2017 01 29 00 00 00"; //  start to use IGS14.atx
+    // char *s_time_str = "2016 01 01 00 00 00"; 
+    // char *e_time_str = "2017 01 01 00 00 00";
+    char *s_time_str = "2022 10 02 00 00 00"; 
+    char *e_time_str = "2022 10 03 00 00 00";
+    gtime_t s_time={0};gtime_t e_time={0};
+    str2time(s_time_str,0,36,&s_time);
+    str2time(e_time_str,0,36,&e_time);
+    double ep[6];
+    time2epoch(s_time,ep);
+    int s_year=(int)ep[0];
+    int total_day = (int)(abs(timediff(e_time, s_time))/86400);
 
-    int total_day=2;
-    
     /*read all related files*/
-    FILE *fp_sp3, *fp;
-    for(int doy_buff=1;doy_buff<=total_day;doy_buff++){
-        gtime_t inq_time_buff=timeadd(s_time,(doy_buff-1)*86400);// time of first inquire in current doy
+    FILE *fp_sp3, *fp_clk, *fp;
+    gtime_t skipdates[100];
+    gtime_t* ptr_skipdates = skipdates;
+    
+    // Notice: read one more day before and after the period of interest to guarantee the correctness of interpolation 
+    for(int cnt_buff=0;cnt_buff<=total_day+1;cnt_buff++){ 
+        gtime_t inq_time_buff=timeadd(s_time,(cnt_buff-1)*86400);// time of first inquire in current doy
         double ep[6];
         time2epoch(inq_time_buff,ep);
         int year_buff=(int)ep[0];
+        char yearStr[5];
+        sprintf(yearStr, "%d", year_buff);
+        char yy_buff[3];
+        strcpy(yy_buff, &yearStr[2]);
+        int doy_buff = time2doy(inq_time_buff);
         int week_buff;
         double tow_buff = time2gpst(inq_time_buff,&week_buff);
         int dow_buff=(int)floor(tow_buff/86400.0);
 
         /* read precise ephemeris files*/
         char sp3file[40];
-        sprintf(sp3file, "./pce_%d/%s%d%d.sp3", year,station,week_buff,dow_buff);
+        // sprintf(sp3file, "./pce_%d/%s%d%d.sp3", year_buff,station_sp3,week_buff,dow_buff);
+        // sprintf(sp3file, "./test/com18775.sp3");
+        sprintf(sp3file, "D:/GNSS_DATA/product/%d/%s%d%d.eph",week_buff,station_sp3,week_buff,dow_buff);
+        
+
         fp_sp3=fopen(sp3file,"r");
         gtime_t time_tmp={0};
         double bfact[2]={0};
@@ -146,9 +165,32 @@ int main(int argc, char **argv)
         char type_sp3=' ',tsys_sp3[4]="";
         /* read sp3 header */
         ns=readsp3h(fp_sp3,&time_tmp,&type_sp3,sats_tmp,bfact,tsys_sp3);
+        if(!ns){
+            fprintf(log_file, "Read head failed : %s\n",sp3file);
+            *ptr_skipdates=inq_time_buff;
+            ptr_skipdates++;
+            continue;
+        }
+        else{
         /* read sp3 body */
-        readsp3b(fp_sp3,type_sp3,sats_tmp,ns,bfact,tsys_sp3,doy_buff,0,nav);
-        fclose(fp_sp3);
+            readsp3b(fp_sp3,type_sp3,sats_tmp,ns,bfact,tsys_sp3,doy_buff,0,nav);
+            fclose(fp_sp3);
+        }
+        
+
+        /*read precise clock file*/
+        char clkfile[40];
+        // sprintf(clkfile, "./clk_%d/%s%d%d.clk", year_buff,station_clk,week_buff,dow_buff);
+        // sprintf(clkfile, "./test/com18775.clk");
+        sprintf(clkfile, "D:/GNSS_DATA/product/%d/%s%d%d.clk",week_buff,station_clk,week_buff,dow_buff);
+        fp_clk=fopen(clkfile,"r");
+        if(!readrnxclk(fp_clk,popt->rnxopt[0],doy_buff,nav)){
+            fprintf(log_file, "Read file failed : %s\n",clkfile);
+            *ptr_skipdates=inq_time_buff;
+            ptr_skipdates++;
+            continue;
+        }
+        fclose(fp_clk);
 
         /* read navigation data */
         double ver;
@@ -157,15 +199,51 @@ int main(int argc, char **argv)
         char type=' ';
         sta_t *sta;
         char rnxfile[40];
-        if(doy_buff<10){sprintf(rnxfile, "./brd_igs_%d/brdc00%d0.%sn", year,doy_buff,yy);}
-        else if(doy_buff<100){sprintf(rnxfile, "./brd_igs_%d/brdc0%d0.%sn",year, doy_buff,yy);}
-        else{sprintf(rnxfile, "./brd_igs_%d/brdc%d0.%sn",year, doy_buff,yy);}
+        if(doy_buff<10){sprintf(rnxfile, "./brd_%s_%d/%s00%d0.%sn", brd_agent,year_buff,brd_agent,doy_buff,yy_buff);}
+        else if(doy_buff<100){sprintf(rnxfile, "./brd_%s_%d/%s0%d0.%sn",brd_agent,year_buff,brd_agent,doy_buff,yy_buff);}
+        else{sprintf(rnxfile, "./brd_%s_%d/%s%d0.%sn",brd_agent,year_buff,brd_agent,doy_buff,yy_buff);}
         fp=fopen(rnxfile,"r");
-        readrnxh(fp,&ver,&type,&sys,&tsys,tobs,nav,stas);//read rinex header
-        readrnxnav(fp,popt->rnxopt[0],ver,sys,nav);//read rinex body
+        if(!readrnxh(fp,&ver,&type,&sys,&tsys,tobs,nav,stas)){//read rinex header
+            fprintf(log_file, "Read head failed : %s\n",rnxfile);
+            *ptr_skipdates=inq_time_buff;
+            ptr_skipdates++;
+            continue;
+        }
+        else{
+            if(strstr(brd_agent,"sugl")){
+                // use stanford post-clean broadcast ephemeris 
+                if(!readrnxnav_stanford(fp,popt->rnxopt[0],ver,sys,nav)){ //read rinex body
+                    fprintf(log_file, "Read body failed : %s\n",rnxfile);
+                    *ptr_skipdates=inq_time_buff;
+                    ptr_skipdates++;
+                    continue;
+                }
+            }
+            else{
+                // use igs broadcast ephemeris
+                if(!readrnxnav(fp,popt->rnxopt[0],ver,sys,nav)){//read rinex body
+                    fprintf(log_file, "Read body failed : %s\n",rnxfile);
+                    *ptr_skipdates=inq_time_buff;
+                    ptr_skipdates++;
+                    continue;
+                }
+            }
+        }
         fclose(fp);
     }
     uniqnav(nav); //delete duplicated ephemeris
+    combpclk(nav); //unique and combine ephemeris and precise clock 
+
+    /* read satellite antenna parameters */
+    if(s_time.time < 1485648000){ // corresponding to 2017-01-29 00:00:00
+        const char *atxfile = "./igs08.atx";
+        readpcv(atxfile,&pcvss);
+    }
+    else{
+        // 2017-01-29 00:00:00 start to use IGS14.atx
+        const char *atxfile = "./igs14.atx";
+        readpcv(atxfile,&pcvss);
+    }    
 
     /* set antenna paramters for precise product*/
     setpcv(s_time,&prcopt,&navs,&pcvss,&pcvsr,stas);
@@ -216,31 +294,33 @@ int main(int argc, char **argv)
         nav->pcvsb[i]=*ppcv;
     }
 
-    /* inquire */
-    FILE* log_file = fopen("./outpos_all.csv", "w"); // Open in "append" mode
-    // fprintf(log_file, "Year,Doy,SoD,PRN,Xp,Yp,Zp,dtp,Xb,Yb,Zb,dtb,clkDiff\n");
-    fprintf(log_file, "Year,Doy,SoD,PRN,Rp,Ap,Cp,dtp,Rb,Ab,Cb,dtb,radDiff,atDiff,ctDiff,clkDiff\n");
-    for(int doy=1;doy<=1;doy++){
-        gtime_t inq_time_s=timeadd(s_time,(doy-1)*86400);// time of first inquire in current doy
+    /* Generate result of interest */
+    double step = 60*15; // time resolution. Seconds
+    int opt = 0; //sat postion option (0: center of mass, 1: antenna phase center)
+    char savefile[40];
+    if(opt){sprintf(savefile, "./outpos_apc_%d.csv",s_year);}
+    else{sprintf(savefile, "./outpos_com_%d.csv",s_year);}
+    FILE* out_file = fopen(savefile, "w"); // Open in "append" mode
+    // fprintf(out_file, "Year,Doy,SoD,PRN,Xp,Yp,Zp,dtp,Xb,Yb,Zb,dtb,clkDiff\n");
+    fprintf(out_file, "Year,Doy,SoD,PRN,Xp,Yp,Zp,Rp,Ap,Cp,dtp,Rb,Ab,Cb,dtb,radDiff,atDiff,ctDiff,clkDiff\n");
+    for(int cnt=1;cnt<=total_day;cnt++){
+        gtime_t inq_time_s=timeadd(s_time,(cnt-1)*86400);// time of first inquire in current doy
         double ep[6];
         time2epoch(inq_time_s,ep);
         int year=(int)ep[0];
-        double step = 1; //seconds
-        for(int i_epoch=0;i_epoch<86400/step;i_epoch++){
-            int flag=0;
-            if(doy==1 && step*i_epoch==82800){
-                flag=1;
-            }
-            if(doy==3 && step*i_epoch==85800){
-                flag=1;
-            }
-            if(doy==6 && step*i_epoch==65100){
-                flag=1;
-            }
-            if(doy==5 && step*i_epoch==900){
-                flag=1;
-            }
+        int doy = time2doy(inq_time_s);
 
+        /*judge whether the inquire date is valid*/
+        for(gtime_t *ptr = ptr_skipdates;ptr!=skipdates;--ptr){
+            time2epoch(*ptr,ep);
+            int year_tmp=(int)ep[0];
+            int doy_tmp = time2doy(*ptr);
+            if(year == year_tmp && doy == doy_tmp){
+                continue;
+            }
+        }
+
+        for(int i_epoch=0;i_epoch<86400/step;i_epoch++){
 
             gtime_t inq_time=timeadd(inq_time_s,step*i_epoch);// inquire time
             char s_inq[32];
@@ -251,8 +331,8 @@ int main(int argc, char **argv)
             
             for(int sat=1;sat<=32;sat++){ //inquire satellite number
                 int n_inq = 1; // number of inquires (each inquire is to solve the precise position and clock of a given satellite at given time)
-                int opt = 1; //sat postion option (0: center of mass, 1: antenna phase center)
-                /* precise satellite position and clock */
+                
+                /* precise satellite position and clock with relativistic effect correction */
                 double *rs_pce,*dts_pce,*var_pce;
                 rs_pce=mat(6,n_inq); dts_pce=mat(2,n_inq); var_pce=mat(1,n_inq);
                 if(!peph2pos(inq_time,sat,nav,opt,rs_pce,dts_pce,var_pce)){
@@ -260,7 +340,7 @@ int main(int argc, char **argv)
                 }
                 /* precise position transformation: ECEF->RAC */
                 double pos_pce_rac[3];
-                ecef2rac(rs_pce,rs_pce,pos_pce_rac);
+                ecef2rac(rs_pce,rs_pce,pos_pce_rac); // use precise orbit as reference
                 
                 if(!opt){
                 /* precise clock transformation: APC->CoM */
@@ -275,7 +355,7 @@ int main(int argc, char **argv)
                     dts_pce[0] = dts_pce[0] + apc_LC_z/CLIGHT; // APC -> MoC 
                 }   
                 
-                /* broadcast satellite position and clock */
+                /* broadcast satellite position and clock with relativistic effect correction */
                 double *rs_bce,*dts_bce,*var_bce;
                 int svh_bce[n_inq];
                 rs_bce=mat(6,n_inq); dts_bce=mat(2,n_inq); var_bce=mat(1,n_inq); 
@@ -293,7 +373,7 @@ int main(int argc, char **argv)
                 }
                 /* broadcast position transformation: ECEF->RAC */
                 double pos_bce_rac[3];
-                ecef2rac(rs_pce,rs_bce,pos_bce_rac);
+                ecef2rac(rs_pce,rs_bce,pos_bce_rac); // use precise orbit as reference
                 
                 if(!opt){
                 /* broadcast clock transformation: APC->CoM */
@@ -308,9 +388,10 @@ int main(int argc, char **argv)
                     dts_bce[0] = dts_bce[0] + apc_LC_z_bce/CLIGHT; // APC -> MoC 
                 }
 
-                fprintf(log_file, "%d,%d,%d,%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n",
+                fprintf(out_file, "%d,%d,%d,%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n",
                 year,doy,sod,sat, 
-                // rs_pce[0],rs_pce[1],rs_pce[2],rs_bce[0],rs_bce[1],rs_bce[2], // ECEF
+                rs_pce[0],rs_pce[1],rs_pce[2],// ECEF precise orbit
+                // rs_bce[0],rs_bce[1],rs_bce[2], // ECEF broadcast orbit
                 pos_pce_rac[0],pos_pce_rac[1],pos_pce_rac[2],CLIGHT*dts_pce[0], // RAC precise orbit & clock
                 pos_bce_rac[0],pos_bce_rac[1],pos_bce_rac[2],CLIGHT*dts_bce[0], // RAC broadcast orbit & clock
                 pos_pce_rac[0]-pos_bce_rac[0], // radDiff
@@ -324,6 +405,7 @@ int main(int argc, char **argv)
         }
     }
     // Close the log file
+    fclose(out_file);
     fclose(log_file);
     return 0;
 }

@@ -1470,10 +1470,14 @@ extern int readrnxh(FILE *fp, double *ver, char *type, int *sys, int *tsys,
                     char tobs[][MAXOBSTYPE][4], nav_t *nav, sta_t *sta);
 extern int readrnxnav(FILE *fp, const char *opt, double ver, int sys,
                       nav_t *nav);
+extern int readrnxnav_stanford(FILE *fp, const char *opt, double ver, int sys,
+                      nav_t *nav);
 extern int readsp3h(FILE *fp, gtime_t *time, char *type, int *sats,
                     double *bfact, char *tsys);
 extern void readsp3b(FILE *fp, char type, int *sats, int ns, double *bfact,
                      char *tsys, int index, int opt, nav_t *nav);
+extern int readrnxclk(FILE *fp, const char *opt, int index, nav_t *nav);
+extern void combpclk(nav_t *nav);
 
 /* ephemeris and clock functions ---------------------------------------------*/
 extern double eph2clk (gtime_t time, const eph_t  *eph);
