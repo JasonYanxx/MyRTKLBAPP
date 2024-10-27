@@ -110,7 +110,7 @@ extern "C" {
 #define TSYS_CMP    5                   /* time system: BeiDou time */
 
 #ifndef NFREQ
-#define NFREQ       3                   /* number of carrier frequencies */
+#define NFREQ       7                   /* number of carrier frequencies (consider Galileo) */
 #endif
 #define NFREQGLO    2                   /* number of carrier frequencies of GLONASS */
 
@@ -125,10 +125,12 @@ extern "C" {
 
 #define ENAGLO 1
 #define ENAGAL 1
+#define ENAQZS 1
+#define ENACMP 1
 
 #ifdef ENAGLO
 #define MINPRNGLO   1                   /* min satellite slot number of GLONASS */
-#define MAXPRNGLO   24                  /* max satellite slot number of GLONASS */
+#define MAXPRNGLO   26                  /* max satellite slot number of GLONASS */
 #define NSATGLO     (MAXPRNGLO-MINPRNGLO+1) /* number of GLONASS satellites */
 #define NSYSGLO     1
 #else
@@ -139,10 +141,10 @@ extern "C" {
 #endif
 #ifdef ENAGAL
 #define MINPRNGAL   1                   /* min satellite PRN number of Galileo */
-#define MAXPRNGAL   30                  /* max satellite PRN number of Galileo */
+#define MAXPRNGAL   36                  /* max satellite PRN number of Galileo */
 #define NSATGAL    (MAXPRNGAL-MINPRNGAL+1) /* number of Galileo satellites */
 #define NSYSGAL     1
-#else
+#else 
 #define MINPRNGAL   0
 #define MAXPRNGAL   0
 #define NSATGAL     0
@@ -1477,6 +1479,7 @@ extern int readsp3h(FILE *fp, gtime_t *time, char *type, int *sats,
 extern void readsp3b(FILE *fp, char type, int *sats, int ns, double *bfact,
                      char *tsys, int index, int opt, nav_t *nav);
 extern int readrnxclk(FILE *fp, const char *opt, int index, nav_t *nav);
+extern int readrnxclk_304(FILE *fp, const char *opt, int index, nav_t *nav);
 extern void combpclk(nav_t *nav);
 
 /* ephemeris and clock functions ---------------------------------------------*/

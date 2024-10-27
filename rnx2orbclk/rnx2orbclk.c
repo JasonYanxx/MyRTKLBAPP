@@ -92,13 +92,21 @@ int main(int argc, char **argv)
     prcopt_t prcopt=prcopt_default;
     prcopt.mode  =PMODE_KINEMA;
     // prcopt.navsys=SYS_GPS|SYS_GLO|SYS_GAL;
-    prcopt.navsys=SYS_GPS;
+    // prcopt.navsys=SYS_GPS;
+    prcopt.navsys=SYS_GAL;
+    int max_prn = prcopt.navsys==SYS_GPS?MAXPRNGPS:MAXPRNGAL;
     prcopt.refpos=1;
     prcopt.glomodear=1;
     prcopt.sateph = 1; // 0 for broadcast ephemeris; 1 for precise ephemeris
     prcopt.nf = 2;
 
-    
+    // data source setting
+    /* 1 for mixture constellation 
+     （MGEX will be used for precise product, and IGS will be used for broadcast);
+      0 for GPS only */ 
+    int use_mx = 1; 
+    char * usr_outstr = "test";
+
     nav_t navs={0};         /* navigation data */
     pcvs_t pcvss={0};        /* receiver antenna parameters */
     pcvs_t pcvsr={0};        /* satellite antenna parameters */
@@ -113,16 +121,16 @@ int main(int argc, char **argv)
 
     char * station_sp3 = "cod";
     char * station_clk = "cod";
-    // char * brd_agent = "sugl"; // "sugl" for Stanford clean broadcast ephemeris;  "brdc" for IGS ephemeris
-    char * brd_agent = "brdc"; // "sugl" for Stanford clean broadcast ephemeris;  "brdc" for IGS ephemeris
+    char * brd_agent = "sugl"; // "sugl" for Stanford clean broadcast ephemeris;  "brdc" for IGS ephemeris
+    // char * brd_agent = "brdc"; // "sugl" for Stanford clean broadcast ephemeris;  "brdc" for IGS ephemeris
     // time of start "yyyy mm dd hh mm ss"
     // char *s_time_str = "2016 01 01 00 00 00"; 
     // char *s_time_str = "2017 01 01 00 00 00"; 
     // char *s_time_str = "2017 01 29 00 00 00"; //  start to use IGS14.atx
     // char *s_time_str = "2016 01 01 00 00 00"; 
-    // char *e_time_str = "2017 01 01 00 00 00";
-    char *s_time_str = "2022 10 02 00 00 00"; 
-    char *e_time_str = "2022 10 03 00 00 00";
+    // char *e_time_str = "2016 01 05 00 00 00";
+    char *s_time_str = "2020 07 05 00 00 00"; 
+    char *e_time_str = "2021 01 01 00 00 00";
     gtime_t s_time={0};gtime_t e_time={0};
     str2time(s_time_str,0,36,&s_time);
     str2time(e_time_str,0,36,&e_time);
@@ -147,16 +155,25 @@ int main(int argc, char **argv)
         char yy_buff[3];
         strcpy(yy_buff, &yearStr[2]);
         int doy_buff = time2doy(inq_time_buff);
+        char ddd_buff_str[4];
+        if(doy_buff<10){sprintf(ddd_buff_str, "00%d",doy_buff);}
+        else if(doy_buff<100){sprintf(ddd_buff_str, "0%d",doy_buff);}
+        else{sprintf(ddd_buff_str, "%d",doy_buff);}
+
         int week_buff;
         double tow_buff = time2gpst(inq_time_buff,&week_buff);
         int dow_buff=(int)floor(tow_buff/86400.0);
 
         /* read precise ephemeris files*/
-        char sp3file[40];
+        char sp3file[100];
         // sprintf(sp3file, "./pce_%d/%s%d%d.sp3", year_buff,station_sp3,week_buff,dow_buff);
         // sprintf(sp3file, "./test/com18775.sp3");
-        sprintf(sp3file, "D:/GNSS_DATA/product/%d/%s%d%d.eph",week_buff,station_sp3,week_buff,dow_buff);
-        
+        if(!use_mx){
+            sprintf(sp3file, "D:/GNSS_DATA/product/%d/%s%d%d.eph",week_buff,station_sp3,week_buff,dow_buff);
+        }
+        else{
+            sprintf(sp3file, "D:/GNSS_DATA/product/mgex/%d/%s0MGXFIN_%d%s0000_01D_05M_ORB.SP3",week_buff,station_sp3,year_buff,ddd_buff_str);
+        }
 
         fp_sp3=fopen(sp3file,"r");
         gtime_t time_tmp={0};
@@ -178,13 +195,32 @@ int main(int argc, char **argv)
         }
         
 
-        /*read precise clock file*/
-        char clkfile[40];
+        /*read head of precise clock file */
+        double ver;
+        int sys,tsys;
+        char tobs[6][MAXOBSTYPE][4]={{""}};
+        char type=' ';
+        sta_t *sta;
+        char clkfile[100];
         // sprintf(clkfile, "./clk_%d/%s%d%d.clk", year_buff,station_clk,week_buff,dow_buff);
         // sprintf(clkfile, "./test/com18775.clk");
-        sprintf(clkfile, "D:/GNSS_DATA/product/%d/%s%d%d.clk",week_buff,station_clk,week_buff,dow_buff);
+        if(!use_mx){
+            sprintf(clkfile, "D:/GNSS_DATA/product/%d/%s%d%d.clk",week_buff,station_clk,week_buff,dow_buff);
+        }
+        else{
+            sprintf(clkfile, "D:/GNSS_DATA/product/mgex/%d/%s0MGXFIN_%d%s0000_01D_30S_CLK.CLK",week_buff,station_sp3,year_buff,ddd_buff_str);
+        }
         fp_clk=fopen(clkfile,"r");
-        if(!readrnxclk(fp_clk,popt->rnxopt[0],doy_buff,nav)){
+        if(!readrnxh(fp_clk,&ver,&type,&sys,&tsys,tobs,nav,stas)){//read rinex header
+            fprintf(log_file, "Read head failed : %s\n",clkfile);
+            *ptr_skipdates=inq_time_buff;
+            ptr_skipdates++;
+            continue;
+        }
+        /*read precise clock file*/
+        // CODE MGEX adopt RINEX 3.04 from GPS week 2113
+        if ( (ver==3.04 && !readrnxclk_304(fp_clk,popt->rnxopt[0],doy_buff,nav))
+             ||(!readrnxclk(fp_clk,popt->rnxopt[0],doy_buff,nav)) ){
             fprintf(log_file, "Read file failed : %s\n",clkfile);
             *ptr_skipdates=inq_time_buff;
             ptr_skipdates++;
@@ -193,15 +229,13 @@ int main(int argc, char **argv)
         fclose(fp_clk);
 
         /* read navigation data */
-        double ver;
-        int sys,tsys;
-        char tobs[6][MAXOBSTYPE][4]={{""}};
-        char type=' ';
-        sta_t *sta;
-        char rnxfile[40];
-        if(doy_buff<10){sprintf(rnxfile, "./brd_%s_%d/%s00%d0.%sn", brd_agent,year_buff,brd_agent,doy_buff,yy_buff);}
-        else if(doy_buff<100){sprintf(rnxfile, "./brd_%s_%d/%s0%d0.%sn",brd_agent,year_buff,brd_agent,doy_buff,yy_buff);}
-        else{sprintf(rnxfile, "./brd_%s_%d/%s%d0.%sn",brd_agent,year_buff,brd_agent,doy_buff,yy_buff);}
+        char rnxfile[100];
+        if(!use_mx){
+            sprintf(rnxfile, "./brd_%s_%d/%s%s0.%sn", brd_agent,year_buff,brd_agent,ddd_buff_str,yy_buff);
+        }
+        else{
+            sprintf(rnxfile, "D:/GNSS_DATA/data/%d/%s/BRDC00IGS_R_%d%s0000_01D_MN.rnx",year_buff,ddd_buff_str,year_buff,ddd_buff_str);
+        }
         fp=fopen(rnxfile,"r");
         if(!readrnxh(fp,&ver,&type,&sys,&tsys,tobs,nav,stas)){//read rinex header
             fprintf(log_file, "Read head failed : %s\n",rnxfile);
@@ -210,7 +244,7 @@ int main(int argc, char **argv)
             continue;
         }
         else{
-            if(strstr(brd_agent,"sugl")){
+            if(strstr(brd_agent,"sugl") && !use_mx){
                 // use stanford post-clean broadcast ephemeris 
                 if(!readrnxnav_stanford(fp,popt->rnxopt[0],ver,sys,nav)){ //read rinex body
                     fprintf(log_file, "Read body failed : %s\n",rnxfile);
@@ -248,7 +282,16 @@ int main(int argc, char **argv)
     /* set antenna paramters for precise product*/
     setpcv(s_time,&prcopt,&navs,&pcvss,&pcvsr,stas);
 
-    /* set antenna paramters for broadcast product according to NGA document*/
+    /* print antenna paramters of precise product */
+    // GPS prn: 1-32
+    // Galileo prn: 1-30
+    for(int prn=1;prn<=max_prn;prn++){ //inquire satellite number
+        int sat_no=satno(prcopt.navsys,prn);
+        const pcv_t *pcv_tmp =nav->pcvs+sat_no-1;
+        printf("sat %d: x=%f, y=%f, z=%f\n",sat_no,pcv_tmp->off[0][0],pcv_tmp->off[0][1],pcv_tmp->off[0][2]);
+    }
+
+    /* set GPS antenna paramters for broadcast product according to NGA document*/
     for (int i=0;i<32;i++) {
         int satno = i+1;
         double x,y,z;
@@ -288,18 +331,80 @@ int main(int argc, char **argv)
         }
         pcv_t pcv; 
         pcv=nav->pcvs[i];
-        pcv_t *ppcv = &pcv;
+        pcv_t *ppcv = &pcv; // copy templete
         ppcv->off[0][0]=x;ppcv->off[0][1]=y;ppcv->off[0][2]=z;
         ppcv->off[1][0]=x;ppcv->off[1][1]=y;ppcv->off[1][2]=z;
         nav->pcvsb[i]=*ppcv;
     }
 
+    /* set Galileo antenna paramters for broadcast product according to Galileo metadata*/
+    FILE *gal_info_file = fopen("./Galileo_SatServiceInfo.txt", "r");
+    char line[1024]; 
+    int line_cnt=0;
+    int PRN_idx,CoM_X_idx,ARP_X_idx,E1_PCO_X_idx,E5a_PCO_X_idx;
+    while (fgets(line, 1024, gal_info_file)) { 
+        char *field = strtok(line, ",");
+        if(line_cnt==0){// first line
+            int tmp_idx=0;
+            while (field) { 
+                if(strstr(field,"PRN")){PRN_idx = tmp_idx;}
+                else if(strstr(field,"CoM_X")){CoM_X_idx = tmp_idx;}
+                else if(strstr(field,"ARP_X")){ARP_X_idx = tmp_idx;}
+                else if(strstr(field,"E1_PCO_X")){E1_PCO_X_idx = tmp_idx;}
+                else if(strstr(field,"E5a_PCO_X")){E5a_PCO_X_idx = tmp_idx;}
+                // printf("%s | ", field);
+                field = strtok(NULL, ",");
+                tmp_idx+=1;
+            }
+        }
+        else{
+            int sat_no;
+            double com[3],arp[3],e1_pco[3],e5a_pco[3];
+            int tmp_idx=0;
+            while (field){
+                if(tmp_idx == PRN_idx){sat_no=satno(SYS_GAL,atoi(field)-200);}
+                else if(tmp_idx >= CoM_X_idx && tmp_idx<CoM_X_idx+3){
+                    com[tmp_idx-CoM_X_idx]=atof(field)/1000.0;} // mm -> m
+                else if(tmp_idx >= ARP_X_idx && tmp_idx<ARP_X_idx+3){
+                    arp[tmp_idx-ARP_X_idx]=atof(field)/1000.0;} // mm -> m
+                else if(tmp_idx >= E1_PCO_X_idx && tmp_idx<E1_PCO_X_idx+3){
+                    e1_pco[tmp_idx-E1_PCO_X_idx]=atof(field)/1000.0;} // mm -> m
+                else if(tmp_idx >= E5a_PCO_X_idx && tmp_idx<E5a_PCO_X_idx+3){
+                    e5a_pco[tmp_idx-E5a_PCO_X_idx]=atof(field)/1000.0;} // mm -> m
+                field = strtok(NULL, ",");
+                tmp_idx+=1;
+            }
+            // calculate PCO (ref: CoM)
+            double pco_e1[3],pco_e5a[3];
+            for (int ii=0;ii<3;ii++) {
+                pco_e1[ii] = (arp[ii]+e1_pco[ii]) - com[ii];
+                pco_e5a[ii] = (arp[ii]+e5a_pco[ii]) - com[ii];
+            }
+            // convert to IGS Body-frame
+            for (int ii=0;ii<2;ii++) {
+                pco_e1[ii] = -pco_e1[ii];
+                pco_e5a[ii] = -pco_e5a[ii];
+            }
+            // record PCO (ref: CoM)
+            int f1=0,f2=2; //freqs[]={1,2,5,6,7,8,0};
+            pcv_t pcv; 
+            pcv=nav->pcvs[sat_no];
+            pcv_t *ppcv = &pcv; // copy templete
+            ppcv->off[f1][0]=pco_e1[0];ppcv->off[f1][1]=pco_e1[1];ppcv->off[f1][2]=pco_e1[2];
+            ppcv->off[f2][0]=pco_e5a[0];ppcv->off[f2][1]=pco_e5a[1];ppcv->off[f2][2]=pco_e5a[2];
+            nav->pcvsb[sat_no]=*ppcv;
+        }
+        line_cnt+=1;
+    }
+    fclose(gal_info_file); 
+
+
     /* Generate result of interest */
-    double step = 60*15; // time resolution. Seconds
+    double step = 60*5; // time resolution. Seconds
     int opt = 0; //sat postion option (0: center of mass, 1: antenna phase center)
-    char savefile[40];
-    if(opt){sprintf(savefile, "./outpos_apc_%d.csv",s_year);}
-    else{sprintf(savefile, "./outpos_com_%d.csv",s_year);}
+    char savefile[100];
+    if(opt){sprintf(savefile, "./new_outpos_apc_%d%s.csv",s_year,usr_outstr);}
+    else{sprintf(savefile, "./new_outpos_com_%d%s.csv",s_year,usr_outstr);}
     FILE* out_file = fopen(savefile, "w"); // Open in "append" mode
     // fprintf(out_file, "Year,Doy,SoD,PRN,Xp,Yp,Zp,dtp,Xb,Yb,Zb,dtb,clkDiff\n");
     fprintf(out_file, "Year,Doy,SoD,PRN,Xp,Yp,Zp,Rp,Ap,Cp,dtp,Rb,Ab,Cb,dtb,radDiff,atDiff,ctDiff,clkDiff\n");
@@ -329,7 +434,10 @@ int main(int argc, char **argv)
             gtime_t tut0;
             int sod=time2sec(inq_time,&tut0);
             
-            for(int sat=1;sat<=32;sat++){ //inquire satellite number
+            // GPS prn: 1-32
+            // Galileo prn: 1-30
+            for(int prn=1;prn<=max_prn;prn++){ //inquire satellite number
+                int sat=satno(prcopt.navsys,prn);
                 int n_inq = 1; // number of inquires (each inquire is to solve the precise position and clock of a given satellite at given time)
                 
                 /* precise satellite position and clock with relativistic effect correction */
@@ -346,7 +454,9 @@ int main(int argc, char **argv)
                 /* precise clock transformation: APC->CoM */
                     const double *lam_tmp=nav->lam[sat-1];
                     const pcv_t *pcv_tmp =nav->pcvs+sat-1;
-                    int f1=0,f2=1;
+                    int f1,f2; //freqs[]={1,2,5,6,7,8,0};
+                    if(prcopt.navsys==SYS_GPS){f1=0,f2=1;}
+                    else if(prcopt.navsys==SYS_GAL){f1=0,f2=2;}
                     double gamma,C1,C2;
                     gamma=SQR(lam_tmp[f2])/SQR(lam_tmp[f1]);
                     C1=gamma/(gamma-1.0);
@@ -378,7 +488,9 @@ int main(int argc, char **argv)
                 if(!opt){
                 /* broadcast clock transformation: APC->CoM */
                     const double *lam_tmp=nav->lam[sat-1];
-                    int f1=0,f2=1;
+                    int f1,f2; //freqs[]={1,2,5,6,7,8,0};
+                    if(prcopt.navsys==SYS_GPS){f1=0,f2=1;}
+                    else if(prcopt.navsys==SYS_GAL){f1=0,f2=2;}
                     double gamma,C1,C2;
                     gamma=SQR(lam_tmp[f2])/SQR(lam_tmp[f1]);
                     C1=gamma/(gamma-1.0);
@@ -389,7 +501,7 @@ int main(int argc, char **argv)
                 }
 
                 fprintf(out_file, "%d,%d,%d,%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n",
-                year,doy,sod,sat, 
+                year,doy,sod,prn, 
                 rs_pce[0],rs_pce[1],rs_pce[2],// ECEF precise orbit
                 // rs_bce[0],rs_bce[1],rs_bce[2], // ECEF broadcast orbit
                 pos_pce_rac[0],pos_pce_rac[1],pos_pce_rac[2],CLIGHT*dts_pce[0], // RAC precise orbit & clock
