@@ -167,7 +167,7 @@ extern "C" {
 #endif
 #ifdef ENACMP
 #define MINPRNCMP   1                   /* min satellite sat number of BeiDou */
-#define MAXPRNCMP   35                  /* max satellite sat number of BeiDou */
+#define MAXPRNCMP   46                  /* max satellite sat number of BeiDou (start from 2021.03.07)*/
 #define NSATCMP     (MAXPRNCMP-MINPRNCMP+1) /* number of BeiDou satellites */
 #define NSYSCMP     1
 #else
@@ -1472,9 +1472,15 @@ extern int readrnxh(FILE *fp, double *ver, char *type, int *sys, int *tsys,
                     char tobs[][MAXOBSTYPE][4], nav_t *nav, sta_t *sta);
 extern int readrnxnav(FILE *fp, const char *opt, double ver, int sys,
                       nav_t *nav);
+extern int readrnxnav_mgex(FILE *fp, const char *opt, double ver, int sys,
+                      nav_t *nav);
 extern int readrnxnav_stanford(FILE *fp, const char *opt, double ver, int sys,
                       nav_t *nav);
 extern int readsp3h(FILE *fp, gtime_t *time, char *type, int *sats,
+                    double *bfact, char *tsys);
+extern int readsp3h_mgex(FILE *fp, gtime_t *time, char *type, int *sats,
+                    double *bfact, char *tsys);
+extern int readsp3h_mgex_100p(FILE *fp, gtime_t *time, char *type, int *sats,
                     double *bfact, char *tsys);
 extern void readsp3b(FILE *fp, char type, int *sats, int ns, double *bfact,
                      char *tsys, int index, int opt, nav_t *nav);

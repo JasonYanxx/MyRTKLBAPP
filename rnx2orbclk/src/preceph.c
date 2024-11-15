@@ -62,6 +62,7 @@ static int code2sys(char code)
     return SYS_NONE;
 }
 /* read sp3 header -----------------------------------------------------------*/
+// 
 extern int readsp3h(FILE *fp, gtime_t *time, char *type, int *sats,
                     double *bfact, char *tsys)
 {
@@ -79,7 +80,7 @@ extern int readsp3h(FILE *fp, gtime_t *time, char *type, int *sats,
         }
         else if (2<=i&&i<=6) {
             if (i==2) {
-                ns=(int)str2num(buff,4,2);
+                ns=(int)str2num(buff,4,2); 
             }
             for (j=0;j<17&&k<ns;j++) {
                 sys=code2sys(buff[9+3*j]);
@@ -97,6 +98,81 @@ extern int readsp3h(FILE *fp, gtime_t *time, char *type, int *sats,
     }
     return ns;
 }
+
+// MGEX precise orbit: until 2021.03.06 23:59:59 there are <100 sats
+extern int readsp3h_mgex(FILE *fp, gtime_t *time, char *type, int *sats,
+                    double *bfact, char *tsys)
+{
+    int i,j,k=0,ns=0,sys,prn;
+    char buff[1024];
+    
+    trace(3,"readsp3h:\n");
+    
+    for (i=0;i<22;i++) {
+        if (!fgets(buff,sizeof(buff),fp)) break;
+        
+        if (i==0) {
+            *type=buff[2];
+            if (str2time(buff,3,28,time)) return 0;
+        }
+        else if (2<=i&&i<=7) {
+            if (i==2) {
+                ns=(int)str2num(buff,4,2); 
+            }
+            for (j=0;j<17&&k<ns;j++) {
+                sys=code2sys(buff[9+3*j]);
+                prn=(int)str2num(buff,10+3*j,2);
+                if (k<MAXSAT) sats[k++]=satno(sys,prn);
+            }
+        }
+        else if (i==14) {
+            strncpy(tsys,buff+9,3); tsys[3]='\0';
+        }
+        else if (i==16) {
+            bfact[0]=str2num(buff, 3,10);
+            bfact[1]=str2num(buff,14,12);
+        }
+    }
+    return ns;
+}
+
+ // MGEX precise orbit: from 2021.03.07 00:00:00 there are 100+ sats
+extern int readsp3h_mgex_100p(FILE *fp, gtime_t *time, char *type, int *sats,
+                    double *bfact, char *tsys)
+{
+    int i,j,k=0,ns=0,sys,prn;
+    char buff[1024];
+    
+    trace(3,"readsp3h:\n");
+    
+    for (i=0;i<22;i++) {
+        if (!fgets(buff,sizeof(buff),fp)) break;
+        
+        if (i==0) {
+            *type=buff[2];
+            if (str2time(buff,3,28,time)) return 0;
+        }
+        else if (2<=i&&i<=8) {
+            if (i==2) {
+                ns=(int)str2num(buff,3,3);
+            }
+            for (j=0;j<17&&k<ns;j++) {
+                sys=code2sys(buff[9+3*j]);
+                prn=(int)str2num(buff,10+3*j,2);
+                if (k<MAXSAT) sats[k++]=satno(sys,prn);
+            }
+        }
+        else if (i==16) {
+            strncpy(tsys,buff+9,3); tsys[3]='\0';
+        }
+        else if (i==18) {
+            bfact[0]=str2num(buff, 3,10);
+            bfact[1]=str2num(buff,14,12);
+        }
+    }
+    return ns;
+}
+
 /* add precise ephemeris -----------------------------------------------------*/
 static int addpeph(nav_t *nav, peph_t *peph)
 {
@@ -506,6 +582,12 @@ static int pephclk(gtime_t time, int sat, const nav_t *nav, double *dts,
     t[1]=timediff(time,nav->pclk[index+1].time);
     c[0]=nav->pclk[index  ].clk[sat-1][0];
     c[1]=nav->pclk[index+1].clk[sat-1][0];
+
+    char s_inq[32];
+    time2str(time, s_inq,1);
+    char id[32];
+    satno2id(sat,id);
+    // printf("Inquire: %s; %ld; %s; pclk: %.15Lf\n",s_inq, time.time, id, c[0]);
     
     if (t[0]<=0.0) {
         if ((dts[0]=c[0])==0.0) return 0;
@@ -601,9 +683,9 @@ extern void ecef2rac(const double *rs_ref,const double *rs, double *pos_rac)
 
     /*convert */
     for (i=0;i<3;i++) r[i]=rs[i];
-    pos_rac [0] = dot(er,r,2);
-    pos_rac [1] = dot(ea,r,2);
-    pos_rac [2] = dot(ec,r,2);
+    pos_rac [0] = dot(er,r,3);
+    pos_rac [1] = dot(ea,r,3);
+    pos_rac [2] = dot(ec,r,3);
 }
 
 /* satellite antenna phase center offset for broadcast product------------------
@@ -708,6 +790,9 @@ extern int peph2pos(gtime_t time, int sat, const nav_t *nav, int opt,
     else { /* no precise clock */
         dts[0]=dts[1]=0.0;
     }
+    // dts[0]=dtss[0];
+    // dts[1]=0;
+    
     if (var) *var=vare+varc;
     
     return 1;

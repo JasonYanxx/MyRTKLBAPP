@@ -241,6 +241,12 @@ extern void eph2pos(gtime_t time, const eph_t *eph, double *rs, double *dts,
     }
     tk=timediff(time,eph->toc);
     *dts=eph->f0+eph->f1*tk+eph->f2*tk*tk;
+
+    char s_inq[32];
+    time2str(time, s_inq,1);
+    char id[32];
+    satno2id(eph->sat,id);
+    // printf("Inquire: %s; %ld; %s; clk: %.15Lf; tk: %.15Lf; eph.toc: %ld; f0: %.15Lf; f1: %.15Lf; f2: %.15Lf\n",s_inq, time.time, id, dts[0], tk, eph->toc.time,eph->f0,eph->f1,eph->f2);
     
     /* relativity correction */
     *dts-=2.0*sqrt(mu*eph->A)*eph->e*sinE/SQR(CLIGHT);
@@ -525,7 +531,12 @@ extern int ephpos(gtime_t time, gtime_t teph, int sat, const nav_t *nav,
     /* satellite velocity and clock drift by differential approx */
     for (i=0;i<3;i++) rs[i+3]=(rst[i]-rs[i])/tt;
     dts[1]=(dtst[0]-dts[0])/tt;
-    
+
+    // /*DCB correction (Yan. E1 signal for orbit compare only)*/
+    // if(sys==SYS_GAL){
+    //     dts[0]-=eph->tgd[1]/CLIGHT; // BGD E5b/E1
+    // }
+
     return 1;
 }
 /* satellite position and clock with sbas correction -------------------------*/

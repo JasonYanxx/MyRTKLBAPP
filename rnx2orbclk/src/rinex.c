@@ -1408,7 +1408,51 @@ extern int readrnxnav(FILE *fp, const char *opt, double ver, int sys,
     
     /* read rinex navigation data body */
     while ((stat=readrnxnavb(fp,opt,ver,sys,&type,&eph,&geph,&seph))>=0) {
-        
+        /* add ephemeris to navigation data */
+        if (stat) {
+            switch (type) {
+                case 1 : stat=add_geph(nav,&geph); break;
+                case 2 : stat=add_seph(nav,&seph); break;
+                default: stat=add_eph (nav,&eph ); break;
+            }
+            if (!stat) return 0;
+        }
+    }
+    return nav->n>0||nav->ng>0||nav->ns>0;
+}
+
+extern int readrnxnav_mgex(FILE *fp, const char *opt, double ver, int sys,
+                      nav_t *nav)
+{
+    eph_t eph;
+    geph_t geph;
+    seph_t seph;
+    int stat,type;
+    
+    trace(3,"readrnxnav: ver=%.2f sys=%d\n",ver,sys);
+    
+    if (!nav) return 0;
+    
+    /* read rinex navigation data body */
+    while ((stat=readrnxnavb(fp,opt,ver,sys,&type,&eph,&geph,&seph))>=0) {
+        // only dcode E5b/E1 signal for Galileo satellites (Yan 20241029)
+        if(ver>=3.0) {sys=satsys(eph.sat,NULL);}
+        if (sys==SYS_GAL && eph.code!=517){
+            continue;
+        }
+        if(sys==SYS_GAL){
+            // toc: galileo time to gps time
+            double utc_frac = eph.toc.sec- (nav->utc_gal[0]+nav->utc_gal[1]*nav->utc_gal[2]);
+            double gps_frac = utc_frac + (nav->utc_gps[0]+nav->utc_gps[1]*nav->utc_gps[2]);
+            eph.toc.sec = gps_frac;
+            // toe: galileo time to gps time
+            utc_frac = eph.toe.sec- (nav->utc_gal[0]+nav->utc_gal[1]*nav->utc_gal[2]);
+            gps_frac = utc_frac + (nav->utc_gps[0]+nav->utc_gps[1]*nav->utc_gps[2]);
+            eph.toe.sec = gps_frac;
+            // // eph.f0 (test!!!)
+            // double delta_frac = - (nav->utc_gal[0]+nav->utc_gal[1]*nav->utc_gal[2])+(nav->utc_gps[0]+nav->utc_gps[1]*nav->utc_gps[2]);
+            // eph.f0-=delta_frac;
+        }
         /* add ephemeris to navigation data */
         if (stat) {
             switch (type) {

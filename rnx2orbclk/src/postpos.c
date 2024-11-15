@@ -832,6 +832,7 @@ extern void setpcv(gtime_t time, prcopt_t *popt, nav_t *nav, const pcvs_t *pcvs,
         }
         nav->pcvs[i]=*pcv;
     }
+    /*receiver related*/
     for (i=0;i<(mode?2:1);i++) {
         if (!strcmp(popt->anttype[i],"*")) { /* set by station parameters */
             strcpy(popt->anttype[i],sta[i].antdes);
